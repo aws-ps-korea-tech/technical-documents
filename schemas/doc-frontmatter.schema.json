@@ -1,11 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aws-ps-korea-tech.github.io/schemas/doc-frontmatter.schema.json",
   "title": "AWS Public Sector Technical Guide front matter",
   "type": "object",
   "required": ["title", "description", "slug", "keywords", "tags", "customProps"],
   "properties": {
-  "draft": {
+    "draft": {
       "type": "boolean"
     },
     "title": {
