@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# Newer pushes to the same pull request replace older runs. Runs on main always finish.
+concurrency:
+  group: validate-docs-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   validate:
     runs-on: ubuntu-latest
