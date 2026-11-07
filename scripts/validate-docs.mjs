@@ -14,6 +14,7 @@ import {
   loadDocuments,
   parseChangedFrom,
   reportIssues,
+  scanCodeFences,
   stripTargetSuffix,
 } from './lib/docs-validation.mjs';
 
@@ -175,9 +176,15 @@ function validatePublicationStatus(document) {
 
 function validateImages(document) {
   const imagePattern = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g;
+  const {fencedLines} = scanCodeFences(document.content);
   for (const match of document.content.matchAll(imagePattern)) {
-    const [fullMatch, altText, rawTarget] = match;
-    const line = findLine(document.raw, document.raw.indexOf(fullMatch));
+    const [, altText, rawTarget] = match;
+    const contentLine = findLine(document.content, match.index);
+    // Image syntax inside a code block is an example, not an image.
+    if (fencedLines.has(contentLine)) {
+      continue;
+    }
+    const line = contentLine + document.contentLineOffset;
     if (!altText.trim()) {
       addDocumentIssue(
         document,
@@ -190,7 +197,19 @@ function validateImages(document) {
     if (isExternalTarget(rawTarget) || rawTarget.startsWith('data:')) {
       continue;
     }
-    const target = stripTargetSuffix(decodeURIComponent(rawTarget));
+    let decodedTarget;
+    try {
+      decodedTarget = decodeURIComponent(rawTarget);
+    } catch {
+      addDocumentIssue(
+        document,
+        'IMAGE_PATH_INVALID',
+        `이미지 경로의 퍼센트 인코딩이 올바르지 않습니다: ${rawTarget}`,
+        {line},
+      );
+      continue;
+    }
+    const target = stripTargetSuffix(decodedTarget);
     const resolved = target.startsWith('/')
       ? path.join(projectRoot, 'static', target)
       : path.resolve(path.dirname(document.absolutePath), target);
@@ -206,32 +225,24 @@ function validateImages(document) {
 }
 
 function validateFences(document) {
-  const fenceLines = document.content
-    .split(/\r?\n/)
-    .map((line, index) => ({line, number: index + 1}))
-    .filter(({line}) => /^\s*(?:```|~~~)/.test(line));
+  const {blocks} = scanCodeFences(document.content);
 
-  if (fenceLines.length % 2 !== 0) {
-    addDocumentIssue(
-      document,
-      'UNCLOSED_CODE_FENCE',
-      '닫히지 않은 코드 블록이 있습니다.',
-      {
-        line:
-          (fenceLines.at(-1)?.number ?? 1) + document.contentLineOffset,
-      },
-    );
-  }
-
-  for (let index = 0; index < fenceLines.length; index += 2) {
-    const opening = fenceLines[index];
-    if (opening && /^\s*(?:```|~~~)\s*$/.test(opening.line)) {
+  for (const block of blocks) {
+    if (block.closeLine === null) {
+      addDocumentIssue(
+        document,
+        'UNCLOSED_CODE_FENCE',
+        '닫히지 않은 코드 블록이 있습니다.',
+        {line: block.openLine + document.contentLineOffset},
+      );
+    }
+    if (block.info === '') {
       addDocumentIssue(
         document,
         'CODE_FENCE_LANGUAGE_MISSING',
         '코드 블록 시작 줄에 bash, json, yaml 같은 언어를 지정하세요.',
         {
-          line: opening.number + document.contentLineOffset,
+          line: block.openLine + document.contentLineOffset,
           severity: 'warning',
         },
       );
@@ -242,9 +253,14 @@ function validateFences(document) {
 function validateHeadingIds(document) {
   const seen = new Map();
   const headingPattern = /^#{2,6}\s+.+?\s+\{#([a-z0-9][a-z0-9-]*)\}\s*$/gm;
+  const {fencedLines} = scanCodeFences(document.content);
   for (const match of document.content.matchAll(headingPattern)) {
     const headingId = match[1];
-    const line = findLine(document.content, match.index) + document.contentLineOffset;
+    const contentLine = findLine(document.content, match.index);
+    if (fencedLines.has(contentLine)) {
+      continue;
+    }
+    const line = contentLine + document.contentLineOffset;
     if (seen.has(headingId)) {
       addDocumentIssue(
         document,

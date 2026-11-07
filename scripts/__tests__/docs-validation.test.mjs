@@ -499,3 +499,71 @@ test('keeps number prefixes in routes when numberPrefixParser is false', (t) => 
   const result = runValidator(root, 'validate-docs.mjs');
   assert.doesNotMatch(result.stdout, /DUPLICATE_SLUG/);
 });
+
+test('reports malformed percent-encoding in an image path instead of crashing', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.writeFileSync(
+    path.join(root, 'docs', 'bad-image.md'),
+    `${validFrontMatter()}\n![diagram](./images/%E0%A4%A.png)\n`,
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /\[IMAGE_PATH_INVALID\]/);
+  assert.doesNotMatch(result.stderr, /URIError/);
+});
+
+test('reports the line of each repeated image, not the first occurrence', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  const body = `${validFrontMatter()}\n![](./a.png)\n\ntext\n\n![](./a.png)\n`;
+  fs.writeFileSync(path.join(root, 'docs', 'twice.md'), body);
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  const lines = [...result.stdout.matchAll(/ERROR docs\/twice\.md:(\d+) \[IMAGE_NOT_FOUND\]/g)].map(
+    (match) => Number(match[1]),
+  );
+  assert.equal(lines.length, 2);
+  assert.equal(lines[1] - lines[0], 4);
+});
+
+test('does not check image syntax inside a code block', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.writeFileSync(
+    path.join(root, 'docs', 'example.md'),
+    `${validFrontMatter()}\n\`\`\`md\n![](./missing.png)\n\`\`\`\n`,
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.doesNotMatch(result.stdout, /IMAGE_/);
+});
+
+test('keeps a nested fence inside a longer fence from looking unclosed', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.writeFileSync(
+    path.join(root, 'docs', 'nested.md'),
+    `${validFrontMatter()}\n\`\`\`\`md\n\`\`\`bash\necho hi\n\`\`\`\n\`\`\`\`\n`,
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.doesNotMatch(result.stdout, /UNCLOSED_CODE_FENCE/);
+  assert.doesNotMatch(result.stdout, /CODE_FENCE_LANGUAGE_MISSING/);
+});
+
+test('still reports a code block that is never closed', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.writeFileSync(
+    path.join(root, 'docs', 'unclosed.md'),
+    `${validFrontMatter()}\n\`\`\`bash\necho hi\n`,
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /\[UNCLOSED_CODE_FENCE\]/);
+});
