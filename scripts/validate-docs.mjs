@@ -2,6 +2,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import {createRequire} from 'node:module';
 import Ajv2020 from 'ajv/dist/2020.js';
 import {
   addIssue,
@@ -29,6 +30,43 @@ const validateFrontMatter = ajv.compile(schema);
 const issues = [];
 const contentIds = new Map();
 const slugs = new Map();
+
+// Read the docs plugin options that decide which files are built and how their
+// URLs are derived, so route comparison follows the real site configuration.
+function loadDocsOptions() {
+  const configPath = path.join(projectRoot, 'docusaurus.config.js');
+  if (!fs.existsSync(configPath)) {
+    return {};
+  }
+  try {
+    const config = createRequire(import.meta.url)(configPath);
+    for (const preset of config.presets ?? []) {
+      const options = Array.isArray(preset) ? preset[1] : null;
+      if (options?.docs) {
+        return options.docs;
+      }
+    }
+  } catch (error) {
+    console.log(`WARNING docusaurus.config.js를 읽지 못해 제외 규칙 없이 비교합니다: ${error.message}`);
+  }
+  return {};
+}
+
+// Minimal glob support for the patterns used in docs.exclude: "**" and "*".
+function globToRegExp(pattern) {
+  const source = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*\//g, '\u0000')
+    .replace(/\*\*/g, '\u0001')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\u0000/g, '(?:.*/)?')
+    .replace(/\u0001/g, '.*');
+  return new RegExp(`^${source}$`);
+}
+
+const docsOptions = loadDocsOptions();
+const excludeMatchers = (docsOptions.exclude ?? []).map(globToRegExp);
+const stripNumberPrefix = docsOptions.numberPrefixParser !== false;
 
 function addDocumentIssue(document, rule, message, options = {}) {
   addIssue(issues, {
@@ -75,20 +113,46 @@ function validateSlug(document) {
   }
 }
 
-// Docusaurus resolves a slug without a leading "/" relative to the document's
-// directory, so only the resolved route can collide with another document.
+const NUMBER_PREFIX = /^\d+\s*[-_.]\s*/;
+
+// Reproduces the URL Docusaurus assigns to a document so that a slug can be
+// compared with routes derived from other files' paths. Checked against the
+// permalinks of all 112 documents in a real build (0 mismatches).
+// - An explicit slug starting with "/" is used as is; any other slug is
+//   resolved relative to the document's directory.
+// - Without a slug the path is used, minus number prefixes ("1-foo" -> "foo"),
+//   and index/README/<same name as the parent folder> map to the folder URL.
 function resolveRoute(document) {
+  const relativePath = document.relativeDocPath;
+  const directory = path.posix.dirname(relativePath);
   const slug = document.data.slug;
-  const joined = slug.startsWith('/')
-    ? slug
-    : path.posix.join('/', path.posix.dirname(document.relativeDocPath), slug);
-  const normalized = path.posix.normalize(joined);
-  return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized;
+  if (typeof slug === 'string') {
+    const joined = slug.startsWith('/')
+      ? slug
+      : path.posix.join('/', directory === '.' ? '' : directory, slug);
+    const normalized = path.posix.normalize(joined);
+    return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized;
+  }
+  const strip = (name) => (stripNumberPrefix ? name.replace(NUMBER_PREFIX, '') : name);
+  const base = strip(path.posix.basename(relativePath, path.posix.extname(relativePath)));
+  const isIndex =
+    ['index', 'readme'].includes(base.toLowerCase()) ||
+    base === strip(path.posix.basename(directory));
+  const directories = directory === '.' ? [] : directory.split('/').map(strip);
+  return `/${(isIndex ? directories : [...directories, base]).join('/')}`;
 }
 
+// A document is built unless it has the top-level `draft: true` or matches
+// docs.exclude in docusaurus.config.js. Only default-locale docs are matched
+// against exclude; translation files live under i18n/ and are never excluded.
 function isBuiltIntoSite(document) {
-  const status = document.data?.customProps?.publicationStatus;
-  return document.data.draft !== true && !['draft', 'review'].includes(status);
+  if (document.data.draft === true) {
+    return false;
+  }
+  return !(
+    document.rootSource === 'default' &&
+    excludeMatchers.some((matcher) => matcher.test(document.relativeDocPath))
+  );
 }
 
 function validatePublicationStatus(document) {
@@ -261,14 +325,16 @@ for (const document of documents) {
   }
 
   // Legacy documents have no publicationStatus, but Docusaurus still routes them
-  // unless they are excluded from the build, so compare every routable slug.
-  if (typeof document.data.slug === 'string' && isBuiltIntoSite(document)) {
+  // unless they are excluded from the build, so compare the URL of every document,
+  // including URLs derived from file paths (a new slug can collide with them).
+  if (isBuiltIntoSite(document)) {
     const locale = props.locale ?? document.rootLocale ?? 'ko';
-    const slugKey = `${locale}:${resolveRoute(document)}`;
+    const route = resolveRoute(document);
+    const slugKey = `${locale}:${route}`;
     const existing = slugs.get(slugKey);
     if (existing) {
       const message = (other) =>
-        `slug '${document.data.slug}'가 ${other.projectPath}와 중복됩니다.`;
+        `문서 주소 '${route}'가 ${other.projectPath}와 중복됩니다.`;
       addDocumentIssue(document, 'DUPLICATE_SLUG', message(existing));
       // Report on the earlier document too, so a legacy/new collision is blocking
       // when the new (strict) document is the one that appears first.

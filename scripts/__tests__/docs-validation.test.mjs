@@ -391,3 +391,111 @@ test('treats an AWS access key in an untouched legacy file as an error', (t) => 
   assert.notEqual(result.status, 0);
   assert.match(result.stdout, /ERROR docs\/legacy\.md:\d+ \[AWS_ACCESS_KEY\]/);
 });
+
+test('reports a slug that collides with a route derived from another file path', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.mkdirSync(path.join(root, 'docs', 'guides'), {recursive: true});
+  fs.writeFileSync(
+    path.join(root, 'docs', 'guides', 'valid-public-guide.md'),
+    '---\ntitle: Legacy without slug\n---\n\nLegacy body.\n',
+  );
+  fs.writeFileSync(path.join(root, 'docs', 'new.md'), validFrontMatter());
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /ERROR docs\/new\.md:\d+ \[DUPLICATE_SLUG\]/);
+});
+
+test('maps index files, number prefixes and same-name files to the folder route', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.mkdirSync(path.join(root, 'docs', 'topic'), {recursive: true});
+  fs.writeFileSync(
+    path.join(root, 'docs', 'topic', 'topic.md'),
+    '---\ntitle: Same name as folder\n---\n\nBody.\n',
+  );
+  fs.writeFileSync(
+    path.join(root, 'docs', 'topic', '1-other.md'),
+    '---\ntitle: Number prefix\nslug: /topic\n---\n\nBody.\n',
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.match(result.stdout, /DUPLICATE_SLUG/);
+});
+
+test('ignores a draft document when comparing routes', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.mkdirSync(path.join(root, 'docs', 'guides'), {recursive: true});
+  fs.writeFileSync(
+    path.join(root, 'docs', 'guides', 'valid-public-guide.md'),
+    '---\ntitle: Excluded draft\ndraft: true\n---\n\nBody.\n',
+  );
+  fs.writeFileSync(path.join(root, 'docs', 'new.md'), validFrontMatter());
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.doesNotMatch(result.stdout, /DUPLICATE_SLUG/);
+});
+
+function writeDocsConfig(root, docsOptions) {
+  fs.writeFileSync(
+    path.join(root, 'docusaurus.config.js'),
+    `module.exports = {presets: [['classic', {docs: ${JSON.stringify(docsOptions)}}]]};\n`,
+  );
+}
+
+test('ignores documents matched by docs.exclude when comparing routes', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  writeDocsConfig(root, {exclude: ['**/draft-*/**', 'private/**']});
+  fs.mkdirSync(path.join(root, 'docs', 'draft-topic'), {recursive: true});
+  fs.writeFileSync(
+    path.join(root, 'docs', 'draft-topic', 'draft-topic.md'),
+    '---\ntitle: Excluded same-name\n---\n\nBody.\n',
+  );
+  fs.writeFileSync(
+    path.join(root, 'docs', 'draft-topic', 'index.md'),
+    '---\ntitle: Excluded index\n---\n\nBody.\n',
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.doesNotMatch(result.stdout, /DUPLICATE_SLUG/);
+});
+
+test('still compares documents that are not excluded', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  writeDocsConfig(root, {exclude: ['private/**']});
+  fs.mkdirSync(path.join(root, 'docs', 'topic'), {recursive: true});
+  fs.writeFileSync(
+    path.join(root, 'docs', 'topic', 'topic.md'),
+    '---\ntitle: Same name as folder\n---\n\nBody.\n',
+  );
+  fs.writeFileSync(
+    path.join(root, 'docs', 'topic', 'index.md'),
+    '---\ntitle: Index\n---\n\nBody.\n',
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.match(result.stdout, /DUPLICATE_SLUG/);
+});
+
+test('keeps number prefixes in routes when numberPrefixParser is false', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  writeDocsConfig(root, {numberPrefixParser: false});
+  fs.writeFileSync(
+    path.join(root, 'docs', '1-intro.md'),
+    '---\ntitle: Prefixed\n---\n\nBody.\n',
+  );
+  fs.writeFileSync(
+    path.join(root, 'docs', 'intro.md'),
+    '---\ntitle: Plain\n---\n\nBody.\n',
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.doesNotMatch(result.stdout, /DUPLICATE_SLUG/);
+});
