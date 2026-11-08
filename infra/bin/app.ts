@@ -45,6 +45,7 @@ if (connectionArn) {
     owner: ctx('githubOwner'),
     repo: ctx('githubRepo'),
     branch: ctx('githubBranch'),
+    siteUrl: ctx('siteUrl'),
   });
 }
 
