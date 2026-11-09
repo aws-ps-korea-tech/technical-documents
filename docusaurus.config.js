@@ -10,8 +10,14 @@ const {
 const siteUrl = process.env.DEPLOY_URL || 'https://aws-ps-tech-docusaurus.netlify.app';
 const siteBaseUrl = process.env.DEPLOY_BASE_URL || '/';
 const englishBaseUrl = `${siteBaseUrl.replace(/\/$/, '')}/en/`;
-const koreanUrl = new URL(siteBaseUrl, siteUrl).toString();
-const englishUrl = new URL(englishBaseUrl, siteUrl).toString();
+// Locale switch links stay on the current origin, so they work on every host
+// (CloudFront, GitHub Pages, Netlify previews, `npm run serve`) without depending
+// on DEPLOY_URL. `pathname://` renders a plain <a> that leaves the current locale
+// build, and `autoAddBaseUrl: false` (see localeSwitch) stops Docusaurus from
+// prefixing the current locale's base URL.
+const koreanUrl = `pathname://${siteBaseUrl}`;
+const englishUrl = `pathname://${englishBaseUrl}`;
+const localeSwitch = {target: '_self', autoAddBaseUrl: false};
 const isEnglish = buildLocale === 'en';
 const githubUrl = 'https://github.com/aws-ps-korea-tech/technical-documents';
 const currentYear = new Date().getFullYear();
@@ -52,7 +58,7 @@ const localeContent = isEnglish
             },
           ],
         },
-        {href: koreanUrl, label: '한국어', position: 'right', target: '_self'},
+        {href: koreanUrl, label: '한국어', position: 'right', ...localeSwitch},
         {href: githubUrl, label: 'GitHub', position: 'right'},
       ],
       footerLinks: [
@@ -108,7 +114,7 @@ const localeContent = isEnglish
           ],
         },
         {to: '/partners/', label: '파트너', position: 'left'},
-        {href: englishUrl, label: 'English', position: 'right', target: '_self'},
+        {href: englishUrl, label: 'English', position: 'right', ...localeSwitch},
         {href: githubUrl, label: 'GitHub', position: 'right'},
       ],
       footerLinks: [
@@ -126,7 +132,7 @@ const localeContent = isEnglish
             {label: '시작하기', to: '/getting-started/'},
             {label: '파트너', to: '/partners/'},
             {label: '전체 문서', to: '/docs/'},
-            {label: 'English', href: englishUrl, target: '_self'},
+            {label: 'English', href: englishUrl, ...localeSwitch},
           ],
         },
         {
