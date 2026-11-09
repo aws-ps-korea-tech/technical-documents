@@ -200,8 +200,9 @@ export default function Home() {
       ? siteConfig.baseUrl.replace(/en\/$/, '') || '/'
       : siteConfig.baseUrl;
   const localeHome = {
-    ko: new URL(rootBaseUrl, siteConfig.url).toString(),
-    en: new URL(`${rootBaseUrl.replace(/\/$/, '')}/en/`, siteConfig.url).toString(),
+    // Same-origin paths: absolute URLs would send users to DEPLOY_URL's host.
+    ko: rootBaseUrl,
+    en: `${rootBaseUrl.replace(/\/$/, '')}/en/`,
   };
 
   return (
