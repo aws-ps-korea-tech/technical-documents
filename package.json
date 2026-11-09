@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "docusaurus": "docusaurus",
-    "start": "docusaurus start",
+    "start": "node scripts/start-locale.mjs ko",
+    "start:en": "node scripts/start-locale.mjs en",
     "build": "node scripts/build-locales.mjs",
     "build:ko": "node scripts/build-locales.mjs ko",
     "build:en": "node scripts/build-locales.mjs en",
