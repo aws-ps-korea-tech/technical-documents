@@ -98,8 +98,9 @@ export class PipelineStack extends Stack {
                 'else echo "CloudFront Function unchanged"; fi',
               ].join(' '),
               // Hashed assets first (immutable), then everything else with revalidation.
-              'aws s3 sync build/ "s3://$SITE_BUCKET/" --region "$SITE_REGION" --exclude "*" --include "assets/*" --cache-control "public,max-age=31536000,immutable"',
-              'aws s3 sync build/ "s3://$SITE_BUCKET/" --region "$SITE_REGION" --delete --exclude "assets/*" --cache-control "public,max-age=0,must-revalidate"',
+              // The English locale build emits its own hashed bundle under en/assets/.
+              'aws s3 sync build/ "s3://$SITE_BUCKET/" --region "$SITE_REGION" --exclude "*" --include "assets/*" --include "en/assets/*" --cache-control "public,max-age=31536000,immutable"',
+              'aws s3 sync build/ "s3://$SITE_BUCKET/" --region "$SITE_REGION" --delete --exclude "assets/*" --exclude "en/assets/*" --cache-control "public,max-age=0,must-revalidate"',
               'aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*" --query Invalidation.Id --output text',
             ],
           },
