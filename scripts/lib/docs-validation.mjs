@@ -312,3 +312,47 @@ export function isExternalTarget(target) {
 export function stripTargetSuffix(target) {
   return target.split('#')[0].split('?')[0];
 }
+
+// Finds fenced code blocks with CommonMark's rules: a fence closes only with the
+// same character, at least as many markers, and no info string. Line numbers
+// are 1-based and relative to `content`.
+export function scanCodeFences(content) {
+  const lines = content.split(/\r?\n/);
+  const blocks = [];
+  let open = null;
+
+  lines.forEach((line, index) => {
+    const match = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!match) {
+      return;
+    }
+    const [, marker, rest] = match;
+    if (!open) {
+      open = {
+        character: marker[0],
+        length: marker.length,
+        openLine: index + 1,
+        info: rest.trim(),
+      };
+    } else if (
+      marker[0] === open.character &&
+      marker.length >= open.length &&
+      rest.trim() === ''
+    ) {
+      blocks.push({...open, closeLine: index + 1});
+      open = null;
+    }
+  });
+  if (open) {
+    blocks.push({...open, closeLine: null});
+  }
+
+  const fencedLines = new Set();
+  for (const block of blocks) {
+    const last = block.closeLine ?? lines.length;
+    for (let line = block.openLine; line <= last; line += 1) {
+      fencedLines.add(line);
+    }
+  }
+  return {blocks, fencedLines};
+}

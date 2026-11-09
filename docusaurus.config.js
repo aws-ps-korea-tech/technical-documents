@@ -14,6 +14,7 @@ const koreanUrl = new URL(siteBaseUrl, siteUrl).toString();
 const englishUrl = new URL(englishBaseUrl, siteUrl).toString();
 const isEnglish = buildLocale === 'en';
 const githubUrl = 'https://github.com/aws-ps-korea-tech/technical-documents';
+const currentYear = new Date().getFullYear();
 
 const localeContent = isEnglish
   ? {
@@ -76,8 +77,7 @@ const localeContent = isEnglish
           ],
         },
       ],
-      copyright:
-        'Unofficial technical guidance maintained by AWS Korea Public Sector contributors. This site does not replace AWS Documentation.',
+      copyright: `Copyright © ${currentYear} AWS Korea Public Sector SA Team. Unofficial technical guidance; this site does not replace AWS Documentation.`,
     }
   : {
       title: 'AWS 공공부문 기술 가이드',
@@ -139,9 +139,37 @@ const localeContent = isEnglish
           ],
         },
       ],
-      copyright:
-        'AWS Korea Public Sector 기술 기여자가 작성·관리하는 비공식 기술 자료입니다. AWS 공식 문서를 대체하지 않습니다.',
+      copyright: `Copyright © ${currentYear} AWS Korea Public Sector SA Team. 비공식 기술 자료이며 AWS 공식 문서를 대체하지 않습니다.`,
     };
+
+// Pinned CloudWatch RUM web client (aws-rum-web) served from the AWS CDN.
+const RUM_CLIENT_VERSION = '3.2.1';
+
+function rumHeadTags() {
+  const {RUM_APP_MONITOR_ID: id, RUM_IDENTITY_POOL_ID: pool, RUM_REGION: region} = process.env;
+  if (!id || !pool || !region) return [];
+  const config = {
+    sessionSampleRate: 1,
+    identityPoolId: pool,
+    endpoint: `https://dataplane.rum.${region}.amazonaws.com`,
+    telemetries: ['performance', 'errors', 'http'],
+    allowCookies: false,
+    enableXRay: false,
+  };
+  const args = [
+    'cwr', id, '1.0.0', region,
+    `https://client.rum.us-east-1.amazonaws.com/${RUM_CLIENT_VERSION}/cwr.js`, config,
+  ].map((a) => JSON.stringify(a)).join(',');
+  return [{
+    tagName: 'script',
+    attributes: {},
+    innerHTML:
+      '(function(n,i,v,r,s,c,x,z){x=window.AwsRumClient={q:[],n:n,i:i,v:v,r:r,c:c};' +
+      'window[n]=function(c,p){x.q.push({c:c,p:p});};z=document.createElement("script");' +
+      'z.async=true;z.src=s;document.head.insertBefore(z,document.head.getElementsByTagName("script")[0]);})' +
+      `(${args});`,
+  }];
+}
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -158,6 +186,7 @@ const config = {
   projectName: 'technical-documents',
 
   onBrokenLinks: 'throw',
+  onDuplicateRoutes: 'throw',
   markdown: {
     hooks: {
       onBrokenMarkdownLinks: 'throw',
@@ -172,6 +201,11 @@ const config = {
       en: {label: 'English', htmlLang: 'en', baseUrl: englishBaseUrl},
     },
   },
+
+  // CloudWatch RUM (page performance, JavaScript and HTTP errors; no cookies).
+  // Only added when the CodeBuild deploy sets the RUM_* variables, so Netlify,
+  // pull request and local builds send nothing.
+  headTags: rumHeadTags(),
 
   presets: [
     [

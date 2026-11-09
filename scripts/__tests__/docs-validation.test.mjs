@@ -348,3 +348,222 @@ test('ignores Markdown headings inside longer code fences', (t) => {
   const result = runValidator(root, 'validate-i18n.mjs');
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
+
+test('reports a slug collision between a legacy document and a new one', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.writeFileSync(path.join(root, 'docs', 'new.md'), validFrontMatter());
+  fs.writeFileSync(
+    path.join(root, 'docs', 'legacy.md'),
+    '---\ntitle: Legacy\nslug: /guides/valid-public-guide\n---\n\nLegacy body.\n',
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /ERROR docs\/new\.md:\d+ \[DUPLICATE_SLUG\]/);
+});
+
+test('does not treat the same relative slug in different directories as a collision', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  for (const directory of ['a', 'b']) {
+    fs.mkdirSync(path.join(root, 'docs', directory), {recursive: true});
+    fs.writeFileSync(
+      path.join(root, 'docs', directory, 'index.md'),
+      `---\ntitle: Legacy ${directory}\nslug: overview\n---\n\nBody.\n`,
+    );
+  }
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.doesNotMatch(result.stdout, /DUPLICATE_SLUG/);
+});
+
+test('treats an AWS access key in an untouched legacy file as an error', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.writeFileSync(
+    path.join(root, 'docs', 'legacy.md'),
+    `---\ntitle: Legacy\n---\n\nKey: ${['AKIA', 'IOSFODNN7EXAMPLE'].join('')}\n`,
+  );
+
+  const result = runValidator(root, 'check-public-content.mjs');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /ERROR docs\/legacy\.md:\d+ \[AWS_ACCESS_KEY\]/);
+});
+
+test('reports a slug that collides with a route derived from another file path', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.mkdirSync(path.join(root, 'docs', 'guides'), {recursive: true});
+  fs.writeFileSync(
+    path.join(root, 'docs', 'guides', 'valid-public-guide.md'),
+    '---\ntitle: Legacy without slug\n---\n\nLegacy body.\n',
+  );
+  fs.writeFileSync(path.join(root, 'docs', 'new.md'), validFrontMatter());
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /ERROR docs\/new\.md:\d+ \[DUPLICATE_SLUG\]/);
+});
+
+test('maps index files, number prefixes and same-name files to the folder route', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.mkdirSync(path.join(root, 'docs', 'topic'), {recursive: true});
+  fs.writeFileSync(
+    path.join(root, 'docs', 'topic', 'topic.md'),
+    '---\ntitle: Same name as folder\n---\n\nBody.\n',
+  );
+  fs.writeFileSync(
+    path.join(root, 'docs', 'topic', '1-other.md'),
+    '---\ntitle: Number prefix\nslug: /topic\n---\n\nBody.\n',
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.match(result.stdout, /DUPLICATE_SLUG/);
+});
+
+test('ignores a draft document when comparing routes', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.mkdirSync(path.join(root, 'docs', 'guides'), {recursive: true});
+  fs.writeFileSync(
+    path.join(root, 'docs', 'guides', 'valid-public-guide.md'),
+    '---\ntitle: Excluded draft\ndraft: true\n---\n\nBody.\n',
+  );
+  fs.writeFileSync(path.join(root, 'docs', 'new.md'), validFrontMatter());
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.doesNotMatch(result.stdout, /DUPLICATE_SLUG/);
+});
+
+function writeDocsConfig(root, docsOptions) {
+  fs.writeFileSync(
+    path.join(root, 'docusaurus.config.js'),
+    `module.exports = {presets: [['classic', {docs: ${JSON.stringify(docsOptions)}}]]};\n`,
+  );
+}
+
+test('ignores documents matched by docs.exclude when comparing routes', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  writeDocsConfig(root, {exclude: ['**/draft-*/**', 'private/**']});
+  fs.mkdirSync(path.join(root, 'docs', 'draft-topic'), {recursive: true});
+  fs.writeFileSync(
+    path.join(root, 'docs', 'draft-topic', 'draft-topic.md'),
+    '---\ntitle: Excluded same-name\n---\n\nBody.\n',
+  );
+  fs.writeFileSync(
+    path.join(root, 'docs', 'draft-topic', 'index.md'),
+    '---\ntitle: Excluded index\n---\n\nBody.\n',
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.doesNotMatch(result.stdout, /DUPLICATE_SLUG/);
+});
+
+test('still compares documents that are not excluded', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  writeDocsConfig(root, {exclude: ['private/**']});
+  fs.mkdirSync(path.join(root, 'docs', 'topic'), {recursive: true});
+  fs.writeFileSync(
+    path.join(root, 'docs', 'topic', 'topic.md'),
+    '---\ntitle: Same name as folder\n---\n\nBody.\n',
+  );
+  fs.writeFileSync(
+    path.join(root, 'docs', 'topic', 'index.md'),
+    '---\ntitle: Index\n---\n\nBody.\n',
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.match(result.stdout, /DUPLICATE_SLUG/);
+});
+
+test('keeps number prefixes in routes when numberPrefixParser is false', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  writeDocsConfig(root, {numberPrefixParser: false});
+  fs.writeFileSync(
+    path.join(root, 'docs', '1-intro.md'),
+    '---\ntitle: Prefixed\n---\n\nBody.\n',
+  );
+  fs.writeFileSync(
+    path.join(root, 'docs', 'intro.md'),
+    '---\ntitle: Plain\n---\n\nBody.\n',
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.doesNotMatch(result.stdout, /DUPLICATE_SLUG/);
+});
+
+test('reports malformed percent-encoding in an image path instead of crashing', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.writeFileSync(
+    path.join(root, 'docs', 'bad-image.md'),
+    `${validFrontMatter()}\n![diagram](./images/%E0%A4%A.png)\n`,
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /\[IMAGE_PATH_INVALID\]/);
+  assert.doesNotMatch(result.stderr, /URIError/);
+});
+
+test('reports the line of each repeated image, not the first occurrence', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  const body = `${validFrontMatter()}\n![](./a.png)\n\ntext\n\n![](./a.png)\n`;
+  fs.writeFileSync(path.join(root, 'docs', 'twice.md'), body);
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  const lines = [...result.stdout.matchAll(/ERROR docs\/twice\.md:(\d+) \[IMAGE_NOT_FOUND\]/g)].map(
+    (match) => Number(match[1]),
+  );
+  assert.equal(lines.length, 2);
+  assert.equal(lines[1] - lines[0], 4);
+});
+
+test('does not check image syntax inside a code block', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.writeFileSync(
+    path.join(root, 'docs', 'example.md'),
+    `${validFrontMatter()}\n\`\`\`md\n![](./missing.png)\n\`\`\`\n`,
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.doesNotMatch(result.stdout, /IMAGE_/);
+});
+
+test('keeps a nested fence inside a longer fence from looking unclosed', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.writeFileSync(
+    path.join(root, 'docs', 'nested.md'),
+    `${validFrontMatter()}\n\`\`\`\`md\n\`\`\`bash\necho hi\n\`\`\`\n\`\`\`\`\n`,
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.doesNotMatch(result.stdout, /UNCLOSED_CODE_FENCE/);
+  assert.doesNotMatch(result.stdout, /CODE_FENCE_LANGUAGE_MISSING/);
+});
+
+test('still reports a code block that is never closed', (t) => {
+  const root = createProject();
+  t.after(() => fs.rmSync(root, {recursive: true, force: true}));
+  fs.writeFileSync(
+    path.join(root, 'docs', 'unclosed.md'),
+    `${validFrontMatter()}\n\`\`\`bash\necho hi\n`,
+  );
+
+  const result = runValidator(root, 'validate-docs.mjs');
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /\[UNCLOSED_CODE_FENCE\]/);
+});
