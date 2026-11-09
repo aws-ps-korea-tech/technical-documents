@@ -9,6 +9,7 @@ import {
   loadDocuments,
   parseChangedFrom,
   reportIssues,
+  scanCodeFences,
 } from './lib/docs-validation.mjs';
 
 const projectRoot = process.cwd();
@@ -60,29 +61,11 @@ function headingMetadata(content) {
   const ids = new Set();
   const missingIdLines = [];
   const lines = content.split(/\r?\n/);
-  let fenceCharacter = null;
-  let fenceLength = 0;
+  const {fencedLines} = scanCodeFences(content);
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    const fenceMatch = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
-    if (fenceMatch) {
-      const marker = fenceMatch[1];
-      const character = marker[0];
-      if (!fenceCharacter) {
-        fenceCharacter = character;
-        fenceLength = marker.length;
-      } else if (
-        character === fenceCharacter &&
-        marker.length >= fenceLength &&
-        fenceMatch[2].trim() === ''
-      ) {
-        fenceCharacter = null;
-        fenceLength = 0;
-      }
-      continue;
-    }
-    if (fenceCharacter) {
+    if (fencedLines.has(index + 1)) {
       continue;
     }
 
