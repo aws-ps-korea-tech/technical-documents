@@ -19,15 +19,32 @@ function walkHtml(directory, files = []) {
   return files;
 }
 
-function routeExists(outputRoot, routePath) {
-  const normalized = decodeURIComponent(routePath).replace(/^\/+|\/+$/g, '');
-  if (!normalized) {
-    return fs.existsSync(path.join(outputRoot, 'index.html'));
+function isFile(filePath) {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
   }
+}
+
+function routeExists(outputRoot, routePath) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(routePath);
+  } catch {
+    // Malformed percent-encoding cannot name a generated page.
+    return false;
+  }
+  const normalized = decoded.replace(/^\/+|\/+$/g, '');
+  if (!normalized) {
+    return isFile(path.join(outputRoot, 'index.html'));
+  }
+  // A bare directory is not a page: parent folders of nested English documents
+  // exist even when the folder itself has no index.html.
   return (
-    fs.existsSync(path.join(outputRoot, normalized)) ||
-    fs.existsSync(path.join(outputRoot, normalized, 'index.html')) ||
-    fs.existsSync(path.join(outputRoot, `${normalized}.html`))
+    isFile(path.join(outputRoot, normalized)) ||
+    isFile(path.join(outputRoot, normalized, 'index.html')) ||
+    isFile(path.join(outputRoot, `${normalized}.html`))
   );
 }
 

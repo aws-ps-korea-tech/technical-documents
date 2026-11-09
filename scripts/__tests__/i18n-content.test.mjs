@@ -111,6 +111,36 @@ test('removes alternate links only when the English route is unavailable', (t) =
   );
 });
 
+test('treats a directory without index.html and malformed encoding as unavailable', (t) => {
+  const scratchRoot = process.env.DOCS_VALIDATION_TMPDIR || os.tmpdir();
+  fs.mkdirSync(scratchRoot, {recursive: true});
+  const buildRoot = fs.mkdtempSync(path.join(scratchRoot, 'alternate-links-'));
+  t.after(() => fs.rmSync(buildRoot, {recursive: true, force: true}));
+
+  // en/parent exists only because en/parent/child/index.html exists.
+  fs.mkdirSync(path.join(buildRoot, 'parent'), {recursive: true});
+  fs.mkdirSync(path.join(buildRoot, 'malformed'), {recursive: true});
+  fs.mkdirSync(path.join(buildRoot, 'en', 'parent', 'child'), {recursive: true});
+  fs.writeFileSync(path.join(buildRoot, 'en', 'parent', 'child', 'index.html'), '');
+  fs.writeFileSync(
+    path.join(buildRoot, 'parent', 'index.html'),
+    '<link rel="alternate" href="https://example.com/en/parent/" hreflang="en">',
+  );
+  fs.writeFileSync(
+    path.join(buildRoot, 'malformed', 'index.html'),
+    '<link rel="alternate" href="https://example.com/en/%E0%A4%A" hreflang="en">',
+  );
+
+  const removed = pruneUnavailableEnglishAlternates(buildRoot, '/');
+  assert.equal(removed, 2);
+  for (const page of ['parent', 'malformed']) {
+    assert.doesNotMatch(
+      fs.readFileSync(path.join(buildRoot, page, 'index.html'), 'utf8'),
+      /hreflang="en"/,
+    );
+  }
+});
+
 test('English route manifest matches every published English document slug', () => {
   const translationRoot = path.join(
     projectRoot,
