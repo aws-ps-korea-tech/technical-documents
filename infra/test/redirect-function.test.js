@@ -3,7 +3,7 @@
 // through the generated function and checks the 301 target, plus index.html rewrites.
 const fs = require('fs');
 const path = require('path');
-const { generate } = require('../lib/redirect-function');
+const { generate, MAX_BYTES } = require('../lib/redirect-function');
 
 const redirects = fs.readFileSync(path.join(__dirname, '../../static/_redirects'), 'utf8');
 const { code, bytes, count } = generate(redirects);
@@ -31,6 +31,17 @@ for (const [uri, expected] of [
   if (r.uri === expected) ok++;
   else fail.push(`rewrite ${uri} -> ${r.uri || r.statusCode} (expected ${expected})`);
 }
-console.log(`redirects=${count} functionBytes=${bytes} ok=${ok} failed=${fail.length}`);
+// Fail in CI while there is still room to act, instead of at deploy time when
+// generate() throws on the hard 10 KB quota.
+const HEADROOM_BYTES = Math.floor(MAX_BYTES * 0.9);
+if (bytes > HEADROOM_BYTES) {
+  fail.push(`function is ${bytes} bytes, over the ${HEADROOM_BYTES}-byte (90%) headroom limit; ` +
+    'compact static/_redirects or move the table to CloudFront KeyValueStore');
+}
+// Hangul targets must reach the edge decoded so encodeURI() can expand them.
+if (/%[0-9A-F]{2}/i.test(code.split('\n')[0])) {
+  fail.push('redirect tables contain percent-encoded targets; store them decoded');
+}
+console.log(`redirects=${count} functionBytes=${bytes}/${MAX_BYTES} ok=${ok} failed=${fail.length}`);
 fail.slice(0, 20).forEach((f) => console.log('  FAIL', f));
 process.exit(fail.length ? 1 : 0);
