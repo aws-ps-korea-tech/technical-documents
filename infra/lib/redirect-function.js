@@ -22,6 +22,20 @@ function encodePath(p) {
   return p.split('/').map((seg) => encodeURIComponent(decodeURIComponent(seg))).join('/');
 }
 
+// Targets are stored decoded and percent-encoded at the edge with encodeURI(),
+// which cloudfront-js-2.0 supports. In the emitted code a Hangul character is a
+// 6-byte \uXXXX escape instead of 9 bytes of %XX escapes, and the function size
+// quota counts bytes. The code stays pure ASCII.
+function storedTarget(dst) {
+  const target = encodePath(dst);
+  const raw = decodeURI(target);
+  if (encodeURI(raw) !== target) {
+    throw new Error(`Redirect target ${dst} does not round-trip through encodeURI(); ` +
+      'escape it in static/_redirects or extend redirect-function.js.');
+  }
+  return { target, raw };
+}
+
 function buildTable(redirectsText) {
   const table = {};
   const direct = {};
@@ -31,10 +45,10 @@ function buildTable(redirectsText) {
     if (parts.length !== 3) continue;
     const [src, dst] = parts;
     const key = src.replace(/\/+$/, '') || '/';
-    const target = encodePath(dst);
+    const { target, raw } = storedTarget(dst);
     if (src !== '/books' && !src.startsWith('/books/')) {
       if (direct[key] === undefined) {
-        direct[key] = target;
+        direct[key] = raw;
         count++;
       }
       continue;
@@ -48,21 +62,26 @@ function buildTable(redirectsText) {
     count++;
     // "page/<slug>" -> "/<book>/<slug>/" is the common case; store 1 to save bytes.
     const short = sub.startsWith('page/') && target === `/${book}/${encodePath(sub.slice(5))}/`;
-    table[book][sub] = short ? 1 : target;
+    table[book][sub] = short ? 1 : raw;
   }
   return { table, direct, count };
 }
 
+function asciiJson(value) {
+  return JSON.stringify(value).replace(/[\u0080-\uffff]/g,
+    (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`);
+}
+
 function generate(redirectsText) {
   const { table, direct, count } = buildTable(redirectsText);
-  const code = `var R=${JSON.stringify(table)},D=${JSON.stringify(direct)};
+  const code = `var R=${asciiJson(table)},D=${asciiJson(direct)};
 function handler(event){
 var q=event.request,u=q.uri,k=u.replace(/\\/+$/,'')||'/',x=D[k];
-if(x)return{statusCode:301,statusDescription:'Moved Permanently',headers:{location:{value:x},'cache-control':{value:'max-age=86400'}}};
+if(x)return{statusCode:301,statusDescription:'Moved Permanently',headers:{location:{value:encodeURI(x)},'cache-control':{value:'max-age=86400'}}};
 if(u==='/books'||u.indexOf('/books/')===0){
 var r=u.replace(/\\/+$/,'').slice(7).split('/'),b=R[r[0]];
 if(b){var s=r.slice(1).join('/'),d=b[s];
-if(d===1)d='/'+r[0]+'/'+r[2]+'/';
+if(d===1)d='/'+r[0]+'/'+r[2]+'/';else if(d)d=encodeURI(d);
 if(d)return{statusCode:301,statusDescription:'Moved Permanently',headers:{location:{value:d},'cache-control':{value:'max-age=86400'}}};}
 }
 if(u.endsWith('/'))q.uri=u+'index.html';
