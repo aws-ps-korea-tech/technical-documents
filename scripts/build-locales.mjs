@@ -2,8 +2,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import {assertSupportedLocale, runDocusaurus} from './lib/docusaurus-cli.mjs';
 import {
   assertEnglishAlternates,
   pruneUnavailableEnglishAlternates,
@@ -13,27 +13,15 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDirectory, '..');
 const buildRoot = path.join(projectRoot, 'build');
 const stagingRoot = path.join(projectRoot, '.locale-build');
-const docusaurus = path.join(projectRoot, 'node_modules', '.bin', 'docusaurus');
 const requestedLocale = process.argv[2] ?? null;
 
-if (requestedLocale && !['ko', 'en'].includes(requestedLocale)) {
-  throw new Error(`Unsupported locale '${requestedLocale}'. Expected ko or en.`);
+if (requestedLocale) {
+  assertSupportedLocale(requestedLocale);
 }
 
 function runBuild(locale, outputDirectory) {
   console.log(`Building ${locale} site into ${path.relative(projectRoot, outputDirectory)}...`);
-  const result = spawnSync(
-    docusaurus,
-    ['build', '--locale', locale, '--out-dir', outputDirectory],
-    {
-      cwd: projectRoot,
-      env: {...process.env, DOCS_BUILD_LOCALE: locale},
-      stdio: 'inherit',
-    },
-  );
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
-  }
+  runDocusaurus('build', locale, ['--out-dir', outputDirectory], {cwd: projectRoot});
 }
 
 if (requestedLocale) {

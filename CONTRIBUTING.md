@@ -188,6 +188,12 @@ npm run build:ko
 npm run build:en
 ```
 
+개발 서버도 언어별로 실행합니다. `npm start`는 한국어, `npm run start:en`은 영어 사이트를 띄웁니다. 영어 문서는 `DOCS_BUILD_LOCALE`로 선택되므로 `npm start -- --locale en`만으로는 영어 문서가 나오지 않습니다. 개발 서버는 한 번에 한 언어만 제공하므로 언어 전환 링크는 `npm run build` 후 `npm run serve`로 확인합니다.
+
+```bash
+npm run start:en
+```
+
 ## 기존 문서
 
 새 문서는 모든 규칙을 처음부터 적용합니다. 기존 문서는 수정할 때 새 기준으로 전환합니다.
