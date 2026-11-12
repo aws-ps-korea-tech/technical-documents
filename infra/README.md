@@ -17,23 +17,32 @@ the GitHub connection ARN is passed on the command line.
 
 `lib/redirect-function.js` turns `../static/_redirects` into a viewer-request function:
 
-- `/books/...` (old BookStack URLs) -> **301** to the new path (percent-encoded `Location`)
+- `/books/...` (old BookStack URLs) -> **301** to the new path (compact table)
+- other entries in `static/_redirects` (for example earlier English URLs) -> **301** from a direct table
 - everything else -> appends `index.html` to directory-style URLs (S3 with OAC has no index documents)
 
+Targets are stored decoded and percent-encoded at the edge with `encodeURI()`, so the
+`Location` header is percent-encoded.
+
 The CloudFront Functions size quota is 10 KB and cannot be raised; generation fails if the
-table outgrows it (today: 107 redirects, about 8.4 KB). The next step would be CloudFront
-KeyValueStore, which is not included in the Free plan.
+table outgrows it, and `npm test` fails above 90% (9,216 bytes). Today: 113 redirects,
+8,720 bytes. The next step would be CloudFront KeyValueStore, which is not included in the
+Free plan.
 
 ```bash
-npm test   # every /books/... line of static/_redirects plus index.html rewrites
+npm test   # every line of static/_redirects plus index.html rewrites and the size headroom
 ```
 
 ## Deploy pipeline
 
 On every push to `main` CodeBuild runs `npm ci`, `npm run build`, strips NUL bytes that
 Docusaurus 3.9 can emit in sidebar labels, republishes the CloudFront Function when
-`static/_redirects` changed, syncs `build/` to S3 (hashed `assets/` as immutable, the rest
-with revalidation) and invalidates `/*`.
+`static/_redirects` changed, syncs `build/` to S3 (hashed `assets/` and `en/assets/` as
+immutable, the rest with revalidation) and invalidates `/*`.
+
+The source action uses AWS CodeConnections. Pushes to `main` trigger the pipeline only when
+the AWS Connector for GitHub app is installed on the `aws-ps-korea-tech` organization with
+access to this repository; otherwise the pipeline runs only when started manually.
 
 ## Commands
 
