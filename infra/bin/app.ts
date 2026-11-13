@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { App } from 'aws-cdk-lib';
 import { AwspstechRedirectStack, AwspstechZoneStack } from '../lib/awspstech-stacks';
+import { RumBudgetStack } from '../lib/budget-stack';
 import { PipelineStack } from '../lib/pipeline-stack';
 import { RumStack } from '../lib/rum-stack';
 import { SiteStack } from '../lib/site-stack';
@@ -46,6 +47,19 @@ if (connectionArn) {
     repo: ctx('githubRepo'),
     branch: ctx('githubBranch'),
     siteUrl: ctx('siteUrl'),
+  });
+}
+
+// Cost alert for CloudWatch RUM events. Created only when alert e-mail addresses are given:
+//   -c budgetEmails=a@example.com,b@example.com [-c rumBudgetUsd=5]
+const budgetEmails: string = ctx('budgetEmails');
+if (budgetEmails) {
+  new RumBudgetStack(app, 'AwsPsTechDocsRumBudget', {
+    env, tags,
+    description: 'aws-ps-tech docs: monthly CloudWatch (RUM) cost budget with e-mail alerts',
+    monthlyLimitUsd: Number(ctx('rumBudgetUsd') ?? 5),
+    emails: budgetEmails.split(',').map((e) => e.trim()).filter(Boolean),
+    usageType: ctx('budgetUsageType') ?? 'APN2-CW:RUM-events',
   });
 }
 
