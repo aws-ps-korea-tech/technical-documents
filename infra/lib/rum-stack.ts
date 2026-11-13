@@ -3,6 +3,7 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as rum from 'aws-cdk-lib/aws-rum';
 import { Construct } from 'constructs';
+import { RumDashboard } from './rum-dashboard';
 
 export interface RumStackProps extends StackProps {
   /** Hostnames the web client may send data from (the CloudFront domain for now). */
@@ -65,6 +66,11 @@ export class RumStack extends Stack {
         identityPoolId: pool.ref,
         guestRoleArn: guestRole.roleArn,
       },
+    });
+
+    new RumDashboard(this, 'RumDashboard', {
+      appMonitorName: RUM_APP_MONITOR_NAME,
+      dashboardName: 'aws-ps-tech-docs-rum',
     });
 
     this.appMonitorId = monitor.attrId;

@@ -7,6 +7,8 @@ CDK app for hosting this Docusaurus site on Amazon CloudFront and for redirectin
 |---|---|---|
 | `AwsPsTechDocsSite` | us-east-1 | Private S3 bucket (OAC), CloudFront distribution, WAF web ACL, CloudFront Function, CloudFront flat-rate **Free** plan subscription |
 | `AwsPsTechDocsPipeline` | Region of the GitHub connection | CodePipeline (V2) + CodeBuild: deploys on every push to `main` |
+| `AwsPsTechDocsRum` | ap-northeast-2 | CloudWatch RUM app monitor (no cookies, 100% sampling) with Cognito guest access, and the `aws-ps-tech-docs-rum` CloudWatch dashboard (traffic, Core Web Vitals p75, load time, errors) |
+| `AwsPsTechDocsRumBudget` | us-east-1 | Monthly $5 cost budget on the RUM events usage type (`APN2-CW:RUM-events`) with e-mail alerts at 80% / 100% actual and 100% forecast. Only synthesized with `-c budgetEmails=a@example.com` (addresses are not committed); change the limit with `-c rumBudgetUsd=10` |
 | `AwspstechZone` | us-east-1 | Route 53 hosted zone for `awspstech.kr` |
 | `AwspstechRedirect` | us-east-1 | Pay-as-you-go CloudFront + ACM certificate: `awspstech.kr`, `www.awspstech.kr` -> `https://aws-ps-tech.kr/` (301). Only synthesized with `-c awspstechCutover=true` |
 
